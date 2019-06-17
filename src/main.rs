@@ -2,7 +2,7 @@
 #![feature(naked_functions)]
 use std::ptr;
 
-const DEFAULT_STACK_SIZE: usize = 1024 * 1024* 2;
+const DEFAULT_STACK_SIZE: usize = 1024 * 1024;
 const MAX_THREADS: usize = 4;
 static mut RUNTIME: usize = 0;
 
@@ -35,7 +35,8 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
-    win_nt_tib: u128,
+    win_bottom: u64,
+    win_top: u64,
 }
 
 impl Thread {
@@ -123,12 +124,14 @@ impl Runtime {
 
         let size = available.stack.len();
         let s_ptr = available.stack.as_mut_ptr();
-
         unsafe {
             ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
             ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
             available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
+            available.ctx.win_bottom = s_ptr.offset(size as isize) as u64;
         }
+        available.ctx.win_top = s_ptr as *const u64 as u64; 
+
         available.state = State::Ready;
     }
 }
@@ -151,12 +154,9 @@ pub fn yield_thread() {
 }
 
 // see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
+// for windows, see: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
 #[naked]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
-
-    // if cfg!(target_os = "windows") {
-
-    // }
 
     asm!("
         movq     $0, %rdi
@@ -167,10 +167,10 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         movq     %r12, 0x20(%rdi)
         movq     %rbx, 0x28(%rdi)
         movq     %rbp, 0x30(%rdi)
-        movq     %gs:0x08, %rax
-        movq     %rax, 0x38(%rdi)
-        movq     %gs:0x16, %rax
-        movq     %rax, 0x40(%rdi)
+        movq     %gs:0x08, %rax     # windows support
+        movq     %rax, 0x38(%rdi)   # windows support
+        movq     %gs:0x16, %rax     # windows support
+        movq     %rax, 0x40(%rdi)   # windows support
 
         movq     $1, %rsi
         movq     0x00(%rsi), %rsp
@@ -180,16 +180,16 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         movq     0x20(%rsi), %r12
         movq     0x28(%rsi), %rbx
         movq     0x30(%rsi), %rbp
-        movq     0x38(%rdi), %rax
-        movq     %rax, %gs:0x08
-        movq     0x40(%rdi), %rax
-        movq     %rax, %gs:0x16
+        movq     0x38(%rdi), %rax   # windows support
+        movq     %rax, %gs:0x08     # windows support
+        movq     0x40(%rdi), %rax   # windows support 
+        movq     %rax, %gs:0x16     # windows support
 
         retq
         "
     :
     :"r"(old), "r"(new)
-    : "rdi"
+    : "rdi", "rsi"
     : "volatile", "alignstack"
     );
 
