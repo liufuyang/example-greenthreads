@@ -35,6 +35,7 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
+    win_nt_tib: u128,
 }
 
 impl Thread {
@@ -153,6 +154,10 @@ pub fn yield_thread() {
 #[naked]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
 
+    // if cfg!(target_os = "windows") {
+
+    // }
+
     asm!("
         movq     $0, %rdi
         movq     %rsp, 0x00(%rdi)
@@ -162,6 +167,10 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         movq     %r12, 0x20(%rdi)
         movq     %rbx, 0x28(%rdi)
         movq     %rbp, 0x30(%rdi)
+        movq     %gs:0x08, %rax
+        movq     %rax, 0x38(%rdi)
+        movq     %gs:0x16, %rax
+        movq     %rax, 0x40(%rdi)
 
         movq     $1, %rsi
         movq     0x00(%rsi), %rsp
@@ -171,6 +180,11 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         movq     0x20(%rsi), %r12
         movq     0x28(%rsi), %rbx
         movq     0x30(%rsi), %rbp
+        movq     0x38(%rdi), %rax
+        movq     %rax, %gs:0x08
+        movq     0x40(%rdi), %rax
+        movq     %rax, %gs:0x16
+
         retq
         "
     :
@@ -178,6 +192,7 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     : "rdi"
     : "volatile", "alignstack"
     );
+
 }
 
 fn main() {
