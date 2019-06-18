@@ -35,8 +35,8 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
-    stack_bottom: u64,
-    stack_top: u64,
+    stack_start: u64,
+    stack_end: u64,
 }
 
 impl Thread {
@@ -128,9 +128,9 @@ impl Runtime {
             ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
             ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
             available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
-            available.ctx.stack_bottom = s_ptr.offset(size as isize) as u64;
+            available.ctx.stack_start = s_ptr.offset(size as isize) as u64;
         }
-        available.ctx.stack_top = s_ptr as *const u64 as u64; 
+        available.ctx.stack_end = s_ptr as *const u64 as u64; 
 
         available.state = State::Ready;
     }
@@ -155,6 +155,8 @@ pub fn yield_thread() {
 
 // see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
 // for windows, see: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
+// should be safe to not conditionally compile this, see: https://gist.github.com/MerryMage/f22e75d5128c07d77630ca01c4272937
+// Contents of TIB on Windows: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
 #[naked]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
 
