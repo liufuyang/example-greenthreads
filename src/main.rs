@@ -2,7 +2,7 @@
 #![feature(naked_functions)]
 use std::ptr;
 
-const DEFAULT_STACK_SIZE: usize = 1024 * 1024;
+const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
 const MAX_THREADS: usize = 4;
 static mut RUNTIME: usize = 0;
 
@@ -25,7 +25,7 @@ struct Thread {
     state: State,
 }
 
-
+#[cfg(not(target_os="windows"))]
 #[derive(Debug, Default)]
 #[repr(C)] 
 struct ThreadContext {
@@ -36,18 +36,6 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
-    xmm6: u64,
-    xmm7: u64,
-    xmm8: u64,
-    xmm9: u64,
-    xmm10: u64,
-    xmm11: u64,
-    xmm12: u64,
-    xmm13: u64,
-    xmm14: u64,
-    xmm15: u64,
-    stack_start: u64,
-    stack_end: u64,
 }
 
 impl Thread {
@@ -126,7 +114,8 @@ impl Runtime {
         true
     }
 
-    pub fn spawn(&mut self, f: fn()) {
+    #[cfg(not(target_os="windows"))]
+     pub fn spawn(&mut self, f: fn()) {
         let available = self
             .threads
             .iter_mut()
@@ -139,10 +128,7 @@ impl Runtime {
             ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
             ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
             available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
-            available.ctx.stack_start = s_ptr.offset(size as isize) as u64;
         }
-        available.ctx.stack_end = s_ptr as *const u64 as u64; 
-
         available.state = State::Ready;
     }
 }
@@ -164,9 +150,109 @@ pub fn yield_thread() {
     };
 }
 
-// see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
-// for windows, see: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
-// should be safe to not conditionally compile this, see: https://gist.github.com/MerryMage/f22e75d5128c07d77630ca01c4272937
+#[cfg(not(target_os = "windows"))]
+#[naked]
+unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
+    asm!("
+        mov     $0, %rdi
+        mov     %rsp, 0x00(%rdi)
+        mov     %r15, 0x08(%rdi)
+        mov     %r14, 0x10(%rdi)
+        mov     %r13, 0x18(%rdi)
+        mov     %r12, 0x20(%rdi)
+        mov     %rbx, 0x28(%rdi)
+        mov     %rbp, 0x30(%rdi)
+
+        mov     $1, %rsi
+        mov     0x00(%rsi), %rsp
+        mov     0x08(%rsi), %r15
+        mov     0x10(%rsi), %r14
+        mov     0x18(%rsi), %r13
+        mov     0x20(%rsi), %r12
+        mov     0x28(%rsi), %rbx
+        mov     0x30(%rsi), %rbp
+
+        ret
+        "
+    :
+    :"{rdi}"(old), "{rsi}"(new)
+    :
+    : "volatile", "alignstack"
+    );
+}
+
+fn main() {
+    let mut runtime = Runtime::new();
+    runtime.init();
+    runtime.spawn(|| {
+        println!("THREAD 1 STARTING");
+        let id = 1;
+        for i in 0..10 {
+            println!("thread: {} counter: {}", id, i);
+            yield_thread();
+        }
+    });
+    runtime.spawn(|| {
+        println!("THREAD 2 STARTING");
+        let id = 2;
+        for i in 0..15 {
+            println!("thread: {} counter: {}", id, i);
+            yield_thread();
+        }
+    });
+    runtime.run();
+}
+
+// ===== WINDOWS SUPPORT =====
+#[cfg(target_os="windows")]
+#[derive(Debug, Default)]
+#[repr(C)] 
+struct ThreadContext {
+    rsp: u64,
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    rbx: u64,
+    rbp: u64,
+    xmm6: u64,
+    xmm7: u64,
+    xmm8: u64,
+    xmm9: u64,
+    xmm10: u64,
+    xmm11: u64,
+    xmm12: u64,
+    xmm13: u64,
+    xmm14: u64,
+    xmm15: u64,
+    stack_start: u64,
+    stack_end: u64,
+}
+
+impl Runtime {
+    #[cfg(target_os="windows")]
+    pub fn spawn(&mut self, f: fn()) {
+        let available = self
+            .threads
+            .iter_mut()
+            .find(|t| t.state == State::Available)
+            .expect("no available thread.");
+
+        let size = available.stack.len();
+        let s_ptr = available.stack.as_mut_ptr();
+        unsafe {
+            ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
+            available.ctx.stack_start = s_ptr.offset(size as isize) as u64;
+        }
+        available.ctx.stack_end = s_ptr as *const u64 as u64;
+
+        available.state = State::Ready;
+    }
+}
+
+// reference: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
 // Contents of TIB on Windows: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
 #[cfg(target_os="windows")]
 #[naked]
@@ -226,57 +312,4 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     : "volatile", "alignstack"
     );
 
-}
-
-#[cfg(not(target_os = "windows"))]
-#[naked]
-unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
-    asm!("
-        mov     $0, %rdi
-        mov     %rsp, 0x00(%rdi)
-        mov     %r15, 0x08(%rdi)
-        mov     %r14, 0x10(%rdi)
-        mov     %r13, 0x18(%rdi)
-        mov     %r12, 0x20(%rdi)
-        mov     %rbx, 0x28(%rdi)
-        mov     %rbp, 0x30(%rdi)
-
-        mov     $1, %rsi
-        mov     0x00(%rsi), %rsp
-        mov     0x08(%rsi), %r15
-        mov     0x10(%rsi), %r14
-        mov     0x18(%rsi), %r13
-        mov     0x20(%rsi), %r12
-        mov     0x28(%rsi), %rbx
-        mov     0x30(%rsi), %rbp
-
-        ret
-        "
-    :
-    :"{rdi}"(old), "{rsi}"(new)
-    :
-    : "volatile", "alignstack"
-    );
-}
-
-fn main() {
-    let mut runtime = Runtime::new();
-    runtime.init();
-    runtime.spawn(|| {
-        println!("THREAD 1 STARTING");
-        let id = 1;
-        for i in 0..10 {
-            println!("thread: {} counter: {}", id, i);
-            yield_thread();
-        }
-    });
-    runtime.spawn(|| {
-        println!("THREAD 2 STARTING");
-        let id = 2;
-        for i in 0..15 {
-            println!("thread: {} counter: {}", id, i);
-            yield_thread();
-        }
-    });
-    runtime.run();
 }
