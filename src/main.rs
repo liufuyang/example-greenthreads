@@ -25,6 +25,7 @@ struct Thread {
     state: State,
 }
 
+
 #[derive(Debug, Default)]
 #[repr(C)] 
 struct ThreadContext {
@@ -35,6 +36,16 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
+    xmm6: u64,
+    xmm7: u64,
+    xmm8: u64,
+    xmm9: u64,
+    xmm10: u64,
+    xmm11: u64,
+    xmm12: u64,
+    xmm13: u64,
+    xmm14: u64,
+    xmm15: u64,
     stack_start: u64,
     stack_end: u64,
 }
@@ -157,37 +168,57 @@ pub fn yield_thread() {
 // for windows, see: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
 // should be safe to not conditionally compile this, see: https://gist.github.com/MerryMage/f22e75d5128c07d77630ca01c4272937
 // Contents of TIB on Windows: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
+#[cfg(target_os="windows")]
 #[naked]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
-
     asm!("
-        movq     $0, %rdi
-        movq     %rsp, 0x00(%rdi)
-        movq     %r15, 0x08(%rdi)
-        movq     %r14, 0x10(%rdi)
-        movq     %r13, 0x18(%rdi)
-        movq     %r12, 0x20(%rdi)
-        movq     %rbx, 0x28(%rdi)
-        movq     %rbp, 0x30(%rdi)
-        movq     %gs:0x08, %rax     # windows support
-        movq     %rax, 0x38(%rdi)   # windows support
-        movq     %gs:0x10, %rax     # windows support
-        movq     %rax, 0x40(%rdi)   # windows support
+        mov     $0, %rdi
+        mov     %rsp, 0x00(%rdi)
+        mov     %r15, 0x08(%rdi)
+        mov     %r14, 0x10(%rdi)
+        mov     %r13, 0x18(%rdi)
+        mov     %r12, 0x20(%rdi)
+        mov     %rbx, 0x28(%rdi)
+        mov     %rbp, 0x30(%rdi)
+        mov     %xmm6, 0x38(%rdi)
+        mov     %xmm7, 0x40(%rdi)
+        mov     %xmm8, 0x48(%rdi)
+        mov     %xmm9, 0x50(%rdi)
+        mov     %xmm10, 0x58(%rdi)
+        mov     %xmm11, 0x60(%rdi)
+        mov     %xmm12, 0x68(%rdi)
+        mov     %xmm13, 0x70(%rdi)
+        mov     %xmm14, 0x78(%rdi)
+        mov     %xmm15, 0x80(%rdi)
+        mov     %gs:0x08, %rax     # windows support
+        mov     %rax, 0x88(%rdi)   # windows support
+        mov     %gs:0x10, %rax     # windows support
+        mov     %rax, 0x90(%rdi)   # windows support
 
-        movq     $1, %rsi
-        movq     0x00(%rsi), %rsp
-        movq     0x08(%rsi), %r15
-        movq     0x10(%rsi), %r14
-        movq     0x18(%rsi), %r13
-        movq     0x20(%rsi), %r12
-        movq     0x28(%rsi), %rbx
-        movq     0x30(%rsi), %rbp
-        movq     0x38(%rsi), %rax   # windows support
-        movq     %rax, %gs:0x08     # windows support
-        movq     0x40(%rsi), %rax   # windows support 
-        movq     %rax, %gs:0x10     # windows support
+        mov     $1, %rsi
+        mov     0x00(%rsi), %rsp
+        mov     0x08(%rsi), %r15
+        mov     0x10(%rsi), %r14
+        mov     0x18(%rsi), %r13
+        mov     0x20(%rsi), %r12
+        mov     0x28(%rsi), %rbx
+        mov     0x30(%rsi), %rbp
+        mov     0x38(%rsi), %xmm6
+        mov     0x40(%rsi), %xmm7
+        mov     0x48(%rsi), %xmm8
+        mov     0x50(%rsi), %xmm9
+        mov     0x58(%rsi), %xmm10
+        mov     0x60(%rsi), %xmm11
+        mov     0x68(%rsi), %xmm12
+        mov     0x70(%rsi), %xmm13
+        mov     0x78(%rsi), %xmm14
+        mov     0x80(%rsi), %xmm15
+        mov     0x88(%rsi), %rax   # windows support
+        mov     %rax, %gs:0x08     # windows support
+        mov     0x90(%rsi), %rax   # windows support 
+        mov     %rax, %gs:0x10     # windows support
 
-        retq
+        ret
         "
     :
     :"{rdi}"(old), "{rsi}"(new)
@@ -195,6 +226,37 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     : "volatile", "alignstack"
     );
 
+}
+
+#[cfg(not(target_os = "windows"))]
+#[naked]
+unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
+    asm!("
+        mov     $0, %rdi
+        mov     %rsp, 0x00(%rdi)
+        mov     %r15, 0x08(%rdi)
+        mov     %r14, 0x10(%rdi)
+        mov     %r13, 0x18(%rdi)
+        mov     %r12, 0x20(%rdi)
+        mov     %rbx, 0x28(%rdi)
+        mov     %rbp, 0x30(%rdi)
+
+        mov     $1, %rsi
+        mov     0x00(%rsi), %rsp
+        mov     0x08(%rsi), %r15
+        mov     0x10(%rsi), %r14
+        mov     0x18(%rsi), %r13
+        mov     0x20(%rsi), %r12
+        mov     0x28(%rsi), %rbx
+        mov     0x30(%rsi), %rbp
+
+        ret
+        "
+    :
+    :"{rdi}"(old), "{rsi}"(new)
+    :
+    : "volatile", "alignstack"
+    );
 }
 
 fn main() {
