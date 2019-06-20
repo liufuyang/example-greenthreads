@@ -82,15 +82,15 @@ impl Runtime {
         }
     }
 
-    /// This is where we start running our runtime. If it is our base thread, we call yield until 
+    /// This is where we start running our runtime. If it is our base thread, we call yield until
     /// it returns false (which means that there are no threads scheduled) and we are done.
     pub fn run(&mut self) -> ! {
         while self.t_yield() {}
         std::process::exit(0);
     }
 
-    /// This is our return function. The only place we use this is in our `guard` function. 
-    /// If the current thread is not our base thread we set its state to Available. It means 
+    /// This is our return function. The only place we use this is in our `guard` function.
+    /// If the current thread is not our base thread we set its state to Available. It means
     /// we're finished with it. Then we yield which will schedule a new thread to be run.
     fn t_return(&mut self) {
         if self.current != 0 {
@@ -98,10 +98,10 @@ impl Runtime {
             self.t_yield();
         }
     }
-    
+
     /// This is the heart of our runtime. Here we go through all threads and see if anyone is in the `Ready` state.
     /// If no thread is `Ready` we're all done. This is an extremely simple sceduler using only a round-robin algorithm.
-    /// 
+    ///
     /// If we find a thread that's ready to be run we change the state of the current thread from `Running` to `Ready`.
     /// Then we call swictch wich will save the current context (the old context) and load the new context
     /// into the CPU which then resumes based on the context it was just passed.
@@ -138,22 +138,22 @@ impl Runtime {
         self.threads.len() > 0
     }
 
-    /// While `yield` is the logically interesting function I think this the technically most interesting. 
-    /// 
-    /// 
-    /// When we spawn a new thread we first check if there are any available threads (threads in `Parked` state). 
-    /// If we run out of threads we panic in this scenario but there are several (better) ways to handle that. 
+    /// While `yield` is the logically interesting function I think this the technically most interesting.
+    ///
+    ///
+    /// When we spawn a new thread we first check if there are any available threads (threads in `Parked` state).
+    /// If we run out of threads we panic in this scenario but there are several (better) ways to handle that.
     /// We keep things simple for now.
-    /// 
+    ///
     /// When we find an available thread we get the stack length and a pointer to our u8 bytearray.
-    /// 
+    ///
     /// The next part we have to use some unsafe functions. First we write an address to our `guard` function
-    /// that will be called if the function we provide returns. Then we set the address to the function we 
+    /// that will be called if the function we provide returns. Then we set the address to the function we
     /// pass inn.
-    /// 
+    ///
     /// Third, we set the value of `rsp` which is the stack pointer to the address of our provided function so we start
     /// executing that first when we are scheuled to run.
-    /// 
+    ///
     /// Lastly we set the state as `Ready` which means we have work to do and is ready to do it.
     pub fn spawn(&mut self, f: fn()) {
         let available = self
@@ -175,10 +175,10 @@ impl Runtime {
     }
 }
 
-/// This is our guard function that we place on top of the stack. All this function does is set the 
+/// This is our guard function that we place on top of the stack. All this function does is set the
 /// state of our current thread and then `yield` which will then schedule a new thread to be run.
 /// For an explanation about the naked attribute see the comments for `switch` below.
-#[cfg_attr(target_os="windows", naked)]
+#[cfg_attr(target_os = "windows", naked)]
 fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
@@ -186,12 +186,11 @@ fn guard() {
         println!("THREAD {} FINISHED.", rt.threads[rt.current].id);
         rt.t_return();
     };
-    
 }
 
-/// We know that Runtime is alive the length of the program and that we only access from one core 
-/// (so no datarace). We yield execution of the current thread  by dereferencing a pointer to our 
-/// Runtime and then calling `t_yield` 
+/// We know that Runtime is alive the length of the program and that we only access from one core
+/// (so no datarace). We yield execution of the current thread  by dereferencing a pointer to our
+/// Runtime and then calling `t_yield`
 pub fn yield_thread() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
@@ -200,25 +199,25 @@ pub fn yield_thread() {
 }
 
 /// So here is our inline Assembly. As you remember from our first example this is just a bit more elaborate where we first
-/// read out the values of all the registers we need and then sets all the register values to the register values we 
+/// read out the values of all the registers we need and then sets all the register values to the register values we
 /// saved when we suspended exceution on the "new" thread.
-/// 
+///
 /// This is essentially all we need to do to save and resume execution.
-/// 
+///
 /// Some details about inline assembly.
-/// 
+///
 /// The assembly commands in the string literal is called the assemblt template. It is preceeded by
 /// zero or up to four segments indicated by ":":
-/// 
+///
 /// - First ":" we have our output parameters, this is values we write data to. We use "=*m" since we pass a pointer
 /// in and we want to write to the location of the data the pointer points to.
 /// - Second ":" we have the input parameters which is our "new" context. We only read from this data.
 /// - Third ":" This our clobber list, this is information to the compiler that these registers can't be used freely
 /// - Fourth ":" This is options we can pass inn, Rust has 3: "alignstack", "volatile" and "intel"
-/// 
+///
 /// For this to work (partially) on windows we need to use "alignstack" where the compiler adds the neccesary padding to
 /// make sure our stack is aligned.
-/// 
+///
 /// One last important part (it will not work without this) is the #[naked] attribute. Basically this lets us have full
 /// control over the stack layout since normal functions has a prologue-and epilogue added by the
 /// compiler that will cause trouble for us. We avoid this by marking the funtion as "Naked".
@@ -273,6 +272,6 @@ fn main() {
             yield_thread();
         }
     });
-    
+
     runtime.run();
 }
