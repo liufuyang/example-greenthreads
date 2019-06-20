@@ -130,7 +130,12 @@ impl Runtime {
             switch(&mut self.threads[old_pos].ctx, &self.threads[pos].ctx);
         }
 
-        true
+        // NOTE: this might look strange and it is. Normally we would just mark this as `unreachable!()` but our compiler
+        // is too smart for it's own good so it optimized our code away on release builds. Curiously this happens on windows
+        // and not on linux. This is a common problem in tests so Rust has a `black_box` function in the `test` crate that
+        // will "pretend" to use a value we give it to prevent the compiler from eliminating code. I'll just do this instead,
+        // this code will never be run anyways and if it did it would always be `true`.
+        self.threads.len() > 0
     }
 
     /// While `yield` is the logically interesting function I think this the technically most interesting. 
@@ -161,9 +166,9 @@ impl Runtime {
         let s_ptr = available.stack.as_mut_ptr();
 
         unsafe {
-            ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
-            ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
+            ptr::write(s_ptr.offset((size - 24) as isize) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset((size - 32) as isize) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset((size - 32) as isize) as u64;
         }
 
         available.state = State::Ready;
@@ -220,6 +225,7 @@ pub fn yield_thread() {
 
 // see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
 #[naked]
+#[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     asm!("
         mov     %rsp, 0x00($0)
@@ -229,7 +235,7 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov     %r12, 0x20($0)
         mov     %rbx, 0x28($0)
         mov     %rbp, 0x30($0)
-
+   
         mov     0x00($1), %rsp
         mov     0x08($1), %r15
         mov     0x10($1), %r14
@@ -238,12 +244,11 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov     0x28($1), %rbx
         mov     0x30($1), %rbp
         ret
-        
         "
-    : "=*m"(old)
-    : "r"(new)
     :
-    : "alignstack" // needed to work on windows
+    :"r"(old), "r"(new)
+    :
+    : "volatile", "alignstack"
     );
 }
 
