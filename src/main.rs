@@ -25,9 +25,9 @@ struct Thread {
     state: State,
 }
 
-#[cfg(not(target_os="windows"))]
+#[cfg(not(target_os = "windows"))]
 #[derive(Debug, Default)]
-#[repr(C)] 
+#[repr(C)]
 struct ThreadContext {
     rsp: u64,
     r15: u64,
@@ -86,7 +86,7 @@ impl Runtime {
             self.t_yield();
         }
     }
-    
+
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
         while self.threads[pos].state != State::Ready {
@@ -112,11 +112,11 @@ impl Runtime {
         }
 
         // preventing compiler optimizing our code away on windows. Will never be reached anyway.
-        self.threads.len() > 0 
+        self.threads.len() > 0
     }
 
-    #[cfg(not(target_os="windows"))]
-     pub fn spawn(&mut self, f: fn()) {
+    #[cfg(not(target_os = "windows"))]
+    pub fn spawn(&mut self, f: fn()) {
         let available = self
             .threads
             .iter_mut()
@@ -134,7 +134,7 @@ impl Runtime {
     }
 }
 
-#[cfg_attr(target_os="windows", naked)]
+#[cfg_attr(target_os = "windows", naked)]
 fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
@@ -203,9 +203,9 @@ fn main() {
 }
 
 // ===== WINDOWS SUPPORT =====
-#[cfg(target_os="windows")]
+#[cfg(target_os = "windows")]
 #[derive(Debug, Default)]
-#[repr(C)] 
+#[repr(C)]
 struct ThreadContext {
     rsp: u64,
     r15: u64,
@@ -229,7 +229,7 @@ struct ThreadContext {
 }
 
 impl Runtime {
-    #[cfg(target_os="windows")]
+    #[cfg(target_os = "windows")]
     pub fn spawn(&mut self, f: fn()) {
         let available = self
             .threads
@@ -253,7 +253,7 @@ impl Runtime {
 
 // reference: https://probablydance.com/2013/02/20/handmade-coroutines-for-windows/
 // Contents of TIB on Windows: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
-#[cfg(target_os="windows")]
+#[cfg(target_os = "windows")]
 #[naked]
 #[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
@@ -306,7 +306,7 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         "
     :
     :"{rdi}"(old), "{rsi}"(new)
-    : 
+    :
     : "volatile", "alignstack"
     );
 }
