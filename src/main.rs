@@ -111,7 +111,8 @@ impl Runtime {
             switch(&mut self.threads[old_pos].ctx, &self.threads[pos].ctx);
         }
 
-        true
+        // preventing compiler optimizing our code away on windows. Will never be reached anyway.
+        self.threads.len() > 0 
     }
 
     #[cfg(not(target_os="windows"))]
@@ -125,15 +126,15 @@ impl Runtime {
         let size = available.stack.len();
         let s_ptr = available.stack.as_mut_ptr();
         unsafe {
-            ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
-            ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
+            ptr::write(s_ptr.offset((size - 24) as isize) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset((size - 32) as isize) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset((size - 32) as isize) as u64;
         }
         available.state = State::Ready;
     }
 }
 
-#[cfg_attr(any(target_os="windows", target_os="linux"), naked)]
+#[cfg_attr(target_os="windows", naked)]
 fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
@@ -152,30 +153,28 @@ pub fn yield_thread() {
 
 #[cfg(not(target_os = "windows"))]
 #[naked]
+#[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     asm!("
-        mov     $0, %rdi
-        mov     %rsp, 0x00(%rdi)
-        mov     %r15, 0x08(%rdi)
-        mov     %r14, 0x10(%rdi)
-        mov     %r13, 0x18(%rdi)
-        mov     %r12, 0x20(%rdi)
-        mov     %rbx, 0x28(%rdi)
-        mov     %rbp, 0x30(%rdi)
-
-        mov     $1, %rsi
-        mov     0x00(%rsi), %rsp
-        mov     0x08(%rsi), %r15
-        mov     0x10(%rsi), %r14
-        mov     0x18(%rsi), %r13
-        mov     0x20(%rsi), %r12
-        mov     0x28(%rsi), %rbx
-        mov     0x30(%rsi), %rbp
-
+        mov     %rsp, 0x00($0)
+        mov     %r15, 0x08($0)
+        mov     %r14, 0x10($0)
+        mov     %r13, 0x18($0)
+        mov     %r12, 0x20($0)
+        mov     %rbx, 0x28($0)
+        mov     %rbp, 0x30($0)
+   
+        mov     0x00($1), %rsp
+        mov     0x08($1), %r15
+        mov     0x10($1), %r14
+        mov     0x18($1), %r13
+        mov     0x20($1), %r12
+        mov     0x28($1), %rbx
+        mov     0x30($1), %rbp
         ret
         "
     :
-    :"{rdi}"(old), "{rsi}"(new)
+    :"r"(old), "r"(new)
     :
     : "volatile", "alignstack"
     );
@@ -256,52 +255,51 @@ impl Runtime {
 // Contents of TIB on Windows: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
 #[cfg(target_os="windows")]
 #[naked]
+#[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     asm!("
-        mov     $0, %rdi
-        mov     %rsp, 0x00(%rdi)
-        mov     %r15, 0x08(%rdi)
-        mov     %r14, 0x10(%rdi)
-        mov     %r13, 0x18(%rdi)
-        mov     %r12, 0x20(%rdi)
-        mov     %rbx, 0x28(%rdi)
-        mov     %rbp, 0x30(%rdi)
-        mov     %xmm6, 0x38(%rdi)
-        mov     %xmm7, 0x40(%rdi)
-        mov     %xmm8, 0x48(%rdi)
-        mov     %xmm9, 0x50(%rdi)
-        mov     %xmm10, 0x58(%rdi)
-        mov     %xmm11, 0x60(%rdi)
-        mov     %xmm12, 0x68(%rdi)
-        mov     %xmm13, 0x70(%rdi)
-        mov     %xmm14, 0x78(%rdi)
-        mov     %xmm15, 0x80(%rdi)
-        mov     %gs:0x08, %rax     # windows support
-        mov     %rax, 0x88(%rdi)   # windows support
-        mov     %gs:0x10, %rax     # windows support
-        mov     %rax, 0x90(%rdi)   # windows support
+        mov     %rsp, 0x00($0)
+        mov     %r15, 0x08($0)
+        mov     %r14, 0x10($0)
+        mov     %r13, 0x18($0)
+        mov     %r12, 0x20($0)
+        mov     %rbx, 0x28($0)
+        mov     %rbp, 0x30($0)
+        mov     %xmm6, 0x38($0)
+        mov     %xmm7, 0x40($0)
+        mov     %xmm8, 0x48($0)
+        mov     %xmm9, 0x50($0)
+        mov     %xmm10, 0x58($0)
+        mov     %xmm11, 0x60($0)
+        mov     %xmm12, 0x68($0)
+        mov     %xmm13, 0x70($0)
+        mov     %xmm14, 0x78($0)
+        mov     %xmm15, 0x80($0)
+        mov     %gs:0x08, %rax    
+        mov     %rax, 0x88($0)  
+        mov     %gs:0x10, %rax    
+        mov     %rax, 0x90($0)  
 
-        mov     $1, %rsi
-        mov     0x00(%rsi), %rsp
-        mov     0x08(%rsi), %r15
-        mov     0x10(%rsi), %r14
-        mov     0x18(%rsi), %r13
-        mov     0x20(%rsi), %r12
-        mov     0x28(%rsi), %rbx
-        mov     0x30(%rsi), %rbp
-        mov     0x38(%rsi), %xmm6
-        mov     0x40(%rsi), %xmm7
-        mov     0x48(%rsi), %xmm8
-        mov     0x50(%rsi), %xmm9
-        mov     0x58(%rsi), %xmm10
-        mov     0x60(%rsi), %xmm11
-        mov     0x68(%rsi), %xmm12
-        mov     0x70(%rsi), %xmm13
-        mov     0x78(%rsi), %xmm14
-        mov     0x80(%rsi), %xmm15
-        mov     0x88(%rsi), %rax   # windows support
+        mov     0x00($1), %rsp
+        mov     0x08($1), %r15
+        mov     0x10($1), %r14
+        mov     0x18($1), %r13
+        mov     0x20($1), %r12
+        mov     0x28($1), %rbx
+        mov     0x30($1), %rbp
+        mov     0x38($1), %xmm6
+        mov     0x40($1), %xmm7
+        mov     0x48($1), %xmm8
+        mov     0x50($1), %xmm9
+        mov     0x58($1), %xmm10
+        mov     0x60($1), %xmm11
+        mov     0x68($1), %xmm12
+        mov     0x70($1), %xmm13
+        mov     0x78($1), %xmm14
+        mov     0x80($1), %xmm15
+        mov     0x88($1), %rax   # windows support
         mov     %rax, %gs:0x08     # windows support
-        mov     0x90(%rsi), %rax   # windows support 
+        mov     0x90($1), %rax   # windows support 
         mov     %rax, %gs:0x10     # windows support
 
         ret
@@ -311,5 +309,4 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     : 
     : "volatile", "alignstack"
     );
-
 }
