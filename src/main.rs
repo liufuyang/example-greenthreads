@@ -139,7 +139,7 @@ fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
         (*rt_ptr).t_return();
-        };
+    };
 }
 
 pub fn yield_thread() {
@@ -187,18 +187,18 @@ fn main() {
         for i in 0..10 {
             println!("thread: {} counter: {}", id, i);
             yield_thread();
-            }
+        }
         println!("THREAD 1 FINISHED");
-        });
+    });
     runtime.spawn(|| {
         println!("THREAD 2 STARTING");
         let id = 2;
         for i in 0..15 {
             println!("thread: {} counter: {}", id, i);
             yield_thread();
-            }
+        }
         println!("THREAD 2 FINISHED");
-        });
+    });
     runtime.run();
 }
 
