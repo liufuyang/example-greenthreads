@@ -138,10 +138,8 @@ impl Runtime {
 fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
-        let rt = &mut *rt_ptr;
-        println!("THREAD {} FINISHED.", rt.threads[rt.current].id);
-        rt.t_return();
-    };
+        (*rt_ptr).t_return();
+        };
 }
 
 pub fn yield_thread() {
@@ -189,16 +187,18 @@ fn main() {
         for i in 0..10 {
             println!("thread: {} counter: {}", id, i);
             yield_thread();
-        }
-    });
+            }
+        println!("THREAD 1 FINISHED");
+        });
     runtime.spawn(|| {
         println!("THREAD 2 STARTING");
         let id = 2;
         for i in 0..15 {
             println!("thread: {} counter: {}", id, i);
             yield_thread();
-        }
-    });
+            }
+        println!("THREAD 2 FINISHED");
+        });
     runtime.run();
 }
 
@@ -239,10 +239,12 @@ impl Runtime {
 
         let size = available.stack.len();
         let s_ptr = available.stack.as_mut_ptr();
+
+        // see: https://docs.microsoft.com/en-us/cpp/build/stack-usage?view=vs-2019#stack-allocation
         unsafe {
-            ptr::write(s_ptr.offset((size - 8) as isize) as *mut u64, guard as u64);
-            ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset((size - 16) as isize) as u64;
+            ptr::write(s_ptr.offset((size - 40) as isize) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset((size - 48) as isize) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset((size - 48) as isize) as u64;
             available.ctx.stack_start = s_ptr.offset(size as isize) as u64;
         }
         available.ctx.stack_end = s_ptr as *const u64 as u64;
@@ -297,15 +299,15 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov     0x70($1), %xmm13
         mov     0x78($1), %xmm14
         mov     0x80($1), %xmm15
-        mov     0x88($1), %rax   # windows support
-        mov     %rax, %gs:0x08     # windows support
-        mov     0x90($1), %rax   # windows support 
-        mov     %rax, %gs:0x10     # windows support
+        mov     0x88($1), %rax
+        mov     %rax, %gs:0x08  
+        mov     0x90($1), %rax 
+        mov     %rax, %gs:0x10  
 
         ret
         "
     :
-    :"{rdi}"(old), "{rsi}"(new)
+    :"r"(old), "r"(new)
     :
     : "volatile", "alignstack"
     );
