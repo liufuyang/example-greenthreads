@@ -205,20 +205,27 @@ pub fn yield_thread() {
 /// The assembly commands in the string literal is called the assemblt template. It is preceeded by
 /// zero or up to four segments indicated by ":":
 ///
-/// - First ":" we have our output parameters, this is values we write data to. We use "=*m" since we pass a pointer
-/// in and we want to write to the location of the data the pointer points to.
-/// - Second ":" we have the input parameters which is our "new" context. We only read from this data.
+/// - First ":" we have our output parameters, this parameters that this function will return.
+/// - Second ":" we have the input parameters which is our contexts. We only read from the "new" context
+/// but we modify the "old" context saving our registers there (see volatile option below)
 /// - Third ":" This our clobber list, this is information to the compiler that these registers can't be used freely
 /// - Fourth ":" This is options we can pass inn, Rust has 3: "alignstack", "volatile" and "intel"
 ///
-/// For this to work (partially) on windows we need to use "alignstack" where the compiler adds the neccesary padding to
-/// make sure our stack is aligned.
+/// For this to work on windows we need to use "alignstack" where the compiler adds the neccesary padding to
+/// make sure our stack is aligned. Since we modify one of our inputs, our assembly has "side effects"
+/// therefore we should use the `volatile` option. I **think** this is actually set for us by default
+/// when there are no output parameters given (my own assumption after going through the source code)
+/// for the `asm` macro, but we should make it explicit anyway.
 ///
 /// One last important part (it will not work without this) is the #[naked] attribute. Basically this lets us have full
 /// control over the stack layout since normal functions has a prologue-and epilogue added by the
 /// compiler that will cause trouble for us. We avoid this by marking the funtion as "Naked".
-
-// see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
+/// For this to work on `release` builds we also need to use the `#[inline(never)] attribute or else
+/// the compiler decides to inline this function (curiously this currently only happens on Windows).
+/// If the function is inlined we get a curious runtime error where it fails when switching back
+/// to as saved context and in general our assembly will not work as expected.
+///
+/// see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
 #[naked]
 #[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
