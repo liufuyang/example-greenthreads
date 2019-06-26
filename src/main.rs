@@ -205,6 +205,7 @@ fn main() {
 #[cfg(target_os = "windows")]
 #[derive(Debug, Default)]
 #[repr(C)]
+#[repr(align(16))]
 struct ThreadContext {
     rsp: u64,
     r15: u64,
@@ -213,16 +214,17 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
-    xmm6: u64,
-    xmm7: u64,
-    xmm8: u64,
-    xmm9: u64,
-    xmm10: u64,
-    xmm11: u64,
-    xmm12: u64,
-    xmm13: u64,
-    xmm14: u64,
-    xmm15: u64,
+    padding: u64,
+    xmm6: u128,
+    xmm7: u128,
+    xmm8: u128,
+    xmm9: u128,
+    xmm10: u128,
+    xmm11: u128,
+    xmm12: u128,
+    xmm13: u128,
+    xmm14: u128,
+    xmm15: u128,
     stack_start: u64,
     stack_end: u64,
 }
@@ -259,49 +261,51 @@ impl Runtime {
 #[inline(never)]
 unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
     asm!("
-        mov     %rsp, 0x00($0)
-        mov     %r15, 0x08($0)
-        mov     %r14, 0x10($0)
-        mov     %r13, 0x18($0)
-        mov     %r12, 0x20($0)
-        mov     %rbx, 0x28($0)
-        mov     %rbp, 0x30($0)
-        mov     %xmm6, 0x38($0)
-        mov     %xmm7, 0x40($0)
-        mov     %xmm8, 0x48($0)
-        mov     %xmm9, 0x50($0)
-        mov     %xmm10, 0x58($0)
-        mov     %xmm11, 0x60($0)
-        mov     %xmm12, 0x68($0)
-        mov     %xmm13, 0x70($0)
-        mov     %xmm14, 0x78($0)
-        mov     %xmm15, 0x80($0)
-        mov     %gs:0x08, %rax    
-        mov     %rax, 0x88($0)  
-        mov     %gs:0x10, %rax    
-        mov     %rax, 0x90($0)  
+        mov         %rsp, 0x00($0)
+        mov         %r15, 0x08($0)
+        mov         %r14, 0x10($0)
+        mov         %r13, 0x18($0)
+        mov         %r12, 0x20($0)
+        mov         %rbx, 0x28($0)
+        mov         %rbp, 0x30($0)
+        # here is our padding 0x38
+        movaps      %xmm6, 0x40($0)
+        movaps      %xmm7, 0x50($0)
+        movaps      %xmm8, 0x60($0)
+        movaps      %xmm9, 0x70($0)
+        movaps      %xmm10, 0x80($0)
+        movaps      %xmm11, 0x90($0)
+        movaps      %xmm12, 0xa0($0)
+        movaps      %xmm13, 0xb0($0)
+        movaps      %xmm14, 0xc0($0)
+        movaps      %xmm15, 0xd0($0)
+        mov         %gs:0x08, %rax    
+        mov         %rax, 0xe0($0)  
+        mov         %gs:0x10, %rax    
+        mov         %rax, 0xe8($0)  
 
-        mov     0x00($1), %rsp
-        mov     0x08($1), %r15
-        mov     0x10($1), %r14
-        mov     0x18($1), %r13
-        mov     0x20($1), %r12
-        mov     0x28($1), %rbx
-        mov     0x30($1), %rbp
-        mov     0x38($1), %xmm6
-        mov     0x40($1), %xmm7
-        mov     0x48($1), %xmm8
-        mov     0x50($1), %xmm9
-        mov     0x58($1), %xmm10
-        mov     0x60($1), %xmm11
-        mov     0x68($1), %xmm12
-        mov     0x70($1), %xmm13
-        mov     0x78($1), %xmm14
-        mov     0x80($1), %xmm15
-        mov     0x88($1), %rax
-        mov     %rax, %gs:0x08  
-        mov     0x90($1), %rax 
-        mov     %rax, %gs:0x10  
+        mov         0x00($1), %rsp
+        mov         0x08($1), %r15
+        mov         0x10($1), %r14
+        mov         0x18($1), %r13
+        mov         0x20($1), %r12
+        mov         0x28($1), %rbx
+        mov         0x30($1), %rbp
+        # here is our padding 0x38
+        movaps      0x40($1), %xmm6
+        movaps      0x50($1), %xmm7
+        movaps      0x60($1), %xmm8
+        movaps      0x70($1), %xmm9
+        movaps      0x80($1), %xmm10
+        movaps      0x90($1), %xmm11
+        movaps      0xa0($1), %xmm12
+        movaps      0xb0($1), %xmm13
+        movaps      0xc0($1), %xmm14
+        movaps      0xd0($1), %xmm15
+        mov         0xe0($1), %rax
+        mov         %rax, %gs:0x08  
+        mov         0xe8($1), %rax 
+        mov         %rax, %gs:0x10  
 
         ret
         "
