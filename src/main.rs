@@ -205,7 +205,6 @@ fn main() {
 #[cfg(target_os = "windows")]
 #[derive(Debug, Default)]
 #[repr(C)]
-#[repr(align(16))]
 struct ThreadContext {
     xmm6: [u64; 2],
     xmm7: [u64; 2],
@@ -224,6 +223,8 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
+    rdi: u64,
+    rsi: u64,
     stack_start: u64,
     stack_end: u64,
 }
@@ -277,10 +278,12 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov         %r12, 0xc0($0)
         mov         %rbx, 0xc8($0)
         mov         %rbp, 0xd0($0)
+        mov         %rdi, 0xd8($0)
+        mov         %rsi, 0xe0($0)
         mov         %gs:0x08, %rax    
-        mov         %rax, 0xd8($0)  
+        mov         %rax, 0xe8($0)  
         mov         %gs:0x10, %rax    
-        mov         %rax, 0xe0($0)  
+        mov         %rax, 0xf0($0)  
 
         movaps      0x00($1), %xmm6
         movaps      0x10($1), %xmm7
@@ -299,9 +302,11 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov         0xc0($1), %r12
         mov         0xc8($1), %rbx
         mov         0xd0($1), %rbp
-        mov         0xd8($1), %rax
+        mov         0xd8($1), %rdi
+        mov         0xe0($1), %rsi
+        mov         0xe8($1), %rax
         mov         %rax, %gs:0x08  
-        mov         0xe0($1), %rax 
+        mov         0xf0($1), %rax 
         mov         %rax, %gs:0x10  
 
         ret
