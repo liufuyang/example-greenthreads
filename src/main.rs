@@ -163,12 +163,19 @@ impl Runtime {
             .expect("no available thread.");
 
         let size = available.stack.len();
-        let s_ptr = available.stack.as_mut_ptr();
 
         unsafe {
-            ptr::write(s_ptr.offset((size - 24) as isize) as *mut u64, guard as u64);
-            ptr::write(s_ptr.offset((size - 32) as isize) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset((size - 32) as isize) as u64;
+            let s_ptr = available.stack.as_mut_ptr().offset(size as isize);
+            
+            // make sure our stack itself is 16 byte aligned - it will always
+            // offset to a lower memory address. Since we know we're at the "high"
+            // memory address of our allocated space, we know that offsetting to
+            // a lower one will be a valid address (given that we actually allocated)
+            // enough space to actually get an aligned pointer in the first place).
+            let s_ptr = (s_ptr as usize & ! 15) as *mut u8;
+            ptr::write(s_ptr.offset(-24) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset(-32) as u64;
         }
 
         available.state = State::Ready;
