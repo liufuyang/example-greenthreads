@@ -2,7 +2,7 @@
 #![feature(naked_functions)]
 use std::ptr;
 
-const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
+const DEFAULT_STACK_SIZE: usize = 1024 * 128 * 2;
 const MAX_THREADS: usize = 4;
 static mut RUNTIME: usize = 0;
 
@@ -19,8 +19,7 @@ enum State {
 }
 
 struct Thread {
-    id: usize,
-    stack: Vec<u8>,
+    stack: Box<[u64; DEFAULT_STACK_SIZE]>,
     ctx: ThreadContext,
     state: State,
 }
@@ -38,10 +37,9 @@ struct ThreadContext {
 }
 
 impl Thread {
-    fn new(id: usize) -> Self {
+    fn new() -> Self {
         Thread {
-            id,
-            stack: vec![0_u8; DEFAULT_STACK_SIZE],
+            stack: Box::new([0_u64; DEFAULT_STACK_SIZE]),
             ctx: ThreadContext::default(),
             state: State::Available,
         }
@@ -51,14 +49,13 @@ impl Thread {
 impl Runtime {
     pub fn new() -> Self {
         let base_thread = Thread {
-            id: 0,
-            stack: vec![0_u8; DEFAULT_STACK_SIZE],
+            stack: Box::new([0_u64; DEFAULT_STACK_SIZE]),
             ctx: ThreadContext::default(),
             state: State::Running,
         };
 
         let mut threads = vec![base_thread];
-        let mut available_threads: Vec<Thread> = (1..MAX_THREADS).map(|i| Thread::new(i)).collect();
+        let mut available_threads: Vec<Thread> = (1..MAX_THREADS).map(|_| Thread::new()).collect();
         threads.append(&mut available_threads);
 
         Runtime {
@@ -123,10 +120,10 @@ impl Runtime {
         let size = available.stack.len();
         unsafe {
             let s_ptr = available.stack.as_mut_ptr().offset(size as isize);
-            let s_ptr = (s_ptr as usize & !15) as *mut u8;
-            ptr::write(s_ptr.offset(-24) as *mut u64, guard as u64);
-            ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset(-32) as u64;
+            
+            ptr::write(s_ptr.offset(-1) as *mut u64, guard as u64);
+            ptr::write(s_ptr.offset(-2) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset(-2) as u64;
         }
         available.state = State::Ready;
     }
@@ -157,7 +154,7 @@ unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
         mov     %r12, 0x20($0)
         mov     %rbx, 0x28($0)
         mov     %rbp, 0x30($0)
-   
+
         mov     0x00($1), %rsp
         mov     0x08($1), %r15
         mov     0x10($1), %r14
@@ -181,7 +178,7 @@ fn main() {
         println!("THREAD 1 STARTING");
         let id = 1;
         for i in 0..10 {
-            println!("thread: {} counter: {}", id, i);
+            println!("thread: {} counter: {}", id, i);
             yield_thread();
         }
         println!("THREAD 1 FINISHED");
@@ -190,7 +187,7 @@ fn main() {
         println!("THREAD 2 STARTING");
         let id = 2;
         for i in 0..15 {
-            println!("thread: {} counter: {}", id, i);
+            println!("thread: {} counter: {}", id, i);
             yield_thread();
         }
         println!("THREAD 2 FINISHED");
